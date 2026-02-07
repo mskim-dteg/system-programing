@@ -24,11 +24,6 @@ EN683 구조
 
 Video Pipe Line
 
-# 32bit system과 64bit system의 차이
-* c/c++ data type 크기
-  |   |
-  |---|---
-
 # Linux Application 운영 환경
 ## [linux virtual address space layout](https://www.google.com/search?q=linux+virtual+address+space+layout)
 
@@ -87,9 +82,83 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
     void *mmap(size_t length, void *addr, size_t length, int prot, int flags, int fd, off_t offset);
     int munmap(size_t length, void *addr, size_t length);
     ```
-# 메모리 관련한 여러가지 주의사항
+
+# 메모리/data 관련한 여러가지 주의사항
 ## Register <-> L1/L2/L3 cache <-> SDRAM 구조 이해
-## DMA에 대한 이해
-## Alignment
+![CPU-registers-cache-main-memory](amd-instruction-decoder.jpg)
+![multi-core-cache](https://www.equestionanswers.com/c/images/CPU-registers-cache-main-memory-multi-core-socket.gif)
+* Big Little CPU architecture
+* register
+  + variable, pointer, data를 처리하기 위해
+  + volatile
+    - 지정된 variable/pointer 의 register 사용 관련 optimization off
+    - access시 마다 재 load하는 코드를 생성하도록 제어
+    - micom이외 최근의 SOC에서는 volatile 만으로 불충분 (cache,write buffer및 access order등의 문제)
+    - linux kernel의 device access macro : readl(...) writel(...)
+* cache
+  + kernel에서 아주 제한된 제어만 가능
+    - MMU에 cache할 영역 설정
+    - DMA coherence 관련 : DMA를 지원하는 디바이스(VPU/DPU/GPU/NPU/....)와 데이타 교환을 위해
+      - invalidate : 변경된 SDRAM의 data로 기존 cache영역을 refresh
+      - flush : 변경된 cache의 data를 SDRAM에 저장
+      - user space에서는 device driver가 제공하는 api로 제어
+  + cache line size : 64bytes ??
+    - https://stackoverflow.com/questions/794632/programmatically-get-the-cache-line-size
+* SDRAM
+  + [addressing latency](https://www.google.com/search?q=addressing+latency+in+sdram)
+  + [burst mode](https://www.google.com/search?q=burst+mode+in+sdram)
+  + 최대 성능을 내려면 quential access해야함
+
+## Data Alignment
+* 32bit vs 64bit system의 c/c++ type별 크기(bytes)
+  |        | char | short | int | long | long long | float | double | pointer
+  |---     |---   |---    |---  |---   |---        |---    |---     |---
+  | 32 bit | 1    | 2     | 4   | 4    | 8         | 4     | 8      | 4
+  | 64 bit | 1    | 2     | 4   | 8    | 8         | 4     | 8      | 8
+  + pointer와 integer type간의 cast시에는 long을 사용해야 compatiblity issue가 없음
+* aligned access(intel계열 cpu 제외)
+  + 기본 type의 data 시작 address는 type의 크기에 맞게 align되어 있어야함
+    - 예외 : __attribute__((packed)) syntax
+    - 가능하면 사용하지 말자 : 급격한 속도 저하
+  + 32bit system에서는 최대 4byte align ????????
+* structure의 member는 data type에 맞게 align됨
+  + 예1
+    ```c
+    struct {
+      int8_t a;
+      // 3bytes padding
+      int32_t b;
+    };
+    ```
+    - structure의 크기는 8byte임
+  + 예2
+    ```c
+    struct A {
+      int16_t a;
+      // 2bytes padding
+      int32_t b;
+      int16_t c;
+      // 2bytes padding ??
+    };
+    struct A {
+      int16_t a;
+      int16_t c;
+      int32_t b;
+    };
+    ```
+    - structure A의 크기 12 bytes
+    - structure B의 크기 8 bytes
+* data를 강제로 align하기
+  + [c/c++11 _Alignas/alignas](https://learn.microsoft.com/en-us/cpp/c-language/alignment-c?view=msvc-170)
+* [malloc](https://man7.org/linux/man-pages/man3/malloc.3.html)
+  ```
+  The malloc(), calloc(), realloc(), and reallocarray() functions
+  return a pointer to the allocated memory, which is suitably
+  aligned for any type that fits into the requested size or less.
+  ```
+* aligned memory allocation
+  + [posix_memalign](https://man7.org/linux/man-pages/man3/posix_memalign.3.html)
+  + [c11 aligned_alloc](https://en.cppreference.com/w/c/memory/aligned_alloc)
+
 ## Memory management
 ### c++ smartpointer
