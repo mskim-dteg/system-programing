@@ -51,6 +51,7 @@ Video Pipe Line
 * "kernel memory space" vs "user memory space"
   + kernel memory mapping은 1개만 존재
   + user space memory mapping은 process마다 1개씩 생성
+
     ![physical vs virtual](https://upload.wikimedia.org/wikipedia/commons/thumb/d/d6/Virtual_address_space_and_physical_address_space_relationship.png/773px-Virtual_address_space_and_physical_address_space_relationship.png)
     - process간 memory protection
     - thread는 동일한 memory mapping 공유
