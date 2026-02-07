@@ -1,5 +1,5 @@
 # NPU를 포함한 SOC 분석
-EN683 구조
+## EN683 구조
 ![Interconnect architecture of EN683X](en683_interconnect.jpg)
 * CPU
   + Core 0~3 : 32KB I/D-cache
@@ -7,7 +7,7 @@ EN683 구조
 * NPU
   + SRAM : 2MB
 
-[QCS6490](https://www.qualcomm.com/internet-of-things/products/q6-series/qcs6490) 구조
+## [QCS6490](https://www.qualcomm.com/internet-of-things/products/q6-series/qcs6490) 구조
 ![QCS6490 Architecture](qcs6490_architecture.jpg)
 * CPU
   + Silver Cores (x4)
@@ -22,7 +22,25 @@ EN683 구조
   + vTCM : 2MB
 ![Hexagon Tensor Processor](qualcomm_htp.jpg)
 
-Video Pipe Line
+## Video Pipe Line
+* Internal Camera
+```mermaid
+graph LR
+A[Camera Sensor] -->|Bayer| C(ISP)
+  C -->|NV12| D(H.264 Encoder) --> G[SD Card 저장]
+  C -->|NV12| E(Scaler/GPU) -->|NV12| F(H.264 Encoder) --> H[Network 전송]
+  C -->|NV12| I(Scaler/GPU) -->|NV12/RGB| J[NPU/AI]
+  C -->|NV12| K(Scaler/GPU) -->|NV12| L(FrameBuffer) --> M[Screen]
+```
+* External Camera
+```mermaid
+graph LR
+A[Analog Camera] -->|AHD| B(AHD Decoder) -->|UYVY| C(Scaler/GPU)
+  C -->|NV12| D(H.264 Encoder) --> G[SD Card 저장]
+  C -->|NV12| E(Scaler/GPU) -->|NV12| F(H.264 Encoder) --> H[Network 전송]
+  C -->|NV12| I(Scaler/GPU) -->|NV12/RGB| J[NPU/AI]
+  C -->|NV12| K(Scaler/GPU) -->|NV12| L(FrameBuffer) --> M[Screen]
+```
 
 # Linux Application 운영 환경
 ## [linux virtual address space layout](https://www.google.com/search?q=linux+virtual+address+space+layout)
