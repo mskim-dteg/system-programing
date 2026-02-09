@@ -61,6 +61,18 @@ A[Analog Camera] -->|AHD| B(AHD Decoder) -->|UYVY| C(Scaler/GPU)
   + linux kernel은 MMU를 사용하여 상위 virtual memory space에 physical memory를 전부 mapping (재배치)
   + 최근의 SOC에서 모든 HW resource를 memory라고 해도 과언이 아님
     - [linux kernel memory barriers](https://www.kernel.org/doc/Documentation/memory-barriers.txt)
+  + [MMU](https://en.wikipedia.org/wiki/Memory_management_unit)
+    - page단위(보통 4KiB)로 관리 : https://man7.org/linux/man-pages/man2/getpagesize.2.html
+    - atrributes : cacheable, write combine flag, rwx flag, ...
+  + [DMA](https://en.wikipedia.org/wiki/Direct_memory_access)
+    - FIFO : cpu가 device의 data register를 통해 memory 전송
+    - DMA는 cpu의 도움없이 직접 memory에 access : cpu는 제어만
+    - 메모리 fragmentation 문제 (DMA access는 보통 연속된 physical address를 요구)
+      - Scatter-Gather Direct Memory Access : device가 지원해야함 (예: AHCI SD Host controller)
+      - [IOMMU](https://en.wikipedia.org/wiki/Input%E2%80%93output_memory_management_unit) : device용 MMU (SOC가 지원해야함)
+      - Linux CMA(Contiguous Memory Allocator) : booting 초기 일부 devicetree로 설정된 영역을 reserve
+      - Memory중 일부를 Linux에 관리하는 영역에서 제거하고 특정 Device 전용으로 사용
+    - 일부 Device는 HW적으로 특정 영역만 access가능
 * "kernel memory space" vs "user memory space"
   + kernel memory mapping은 1개만 존재
   + user space memory mapping은 process마다 1개씩 생성
@@ -92,8 +104,11 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
       readelf -d [executable file or shared library]
       ```
 * [demand paging](https://en.wikipedia.org/wiki/Demand_paging)
-  + Text segment, ro data, 및 ro memory mapping segment는 실제 사용할 때만 메모리에 적재한다. 메모리 사용량의 증가에 따라서 최근에 접근하지 않은 page는 메모리에서 제거하고 필요시 다시 적재
-  + 항상 메모리에 적재해야할 경우(realtime procssing) [mlock](https://man7.org/linux/man-pages/man2/mlock.2.html) api 사용
+  + Text segment, ro data, 및 ro memory mapping segment는 실제 사용할 때만 메모리에 적재한다. 메모리 사용량의 증가에 따라서 최근에 접근하지 않은 page는 메모리에서 제거하고 필요시 다시 적재 : [swapping](https://en.wikipedia.org/wiki/Memory_paging)
+  + 항상 메모리에 적재해야할 경우 [mlock](https://man7.org/linux/man-pages/man2/mlock.2.html) api 사용
+    - swapping 방지
+    - realtime : latency 보장
+    - 보안 : encryption key 유출 방지
   + [mmap](https://man7.org/linux/man-pages/man2/mmap.2.html) : file을 virtual memory space에 mapping
     ```c
     #include <sys/mman.h>
@@ -114,18 +129,23 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
     - micom이외 최근의 SOC에서는 volatile 만으로 불충분 (cache,write buffer및 access order등의 문제)
     - linux kernel의 device access macro : readl(...) writel(...)
 * cache
+  + cache vs TCM(Tightly Coupled Memory)
+    - cache : memory space에 포함되지 않음
+    - TCM : main memory의 일종
   + kernel에서 아주 제한된 제어만 가능
     - MMU에 cache할 영역 설정
     - DMA coherence 관련 : DMA를 지원하는 디바이스(VPU/DPU/GPU/NPU/....)와 데이타 교환을 위해
       - invalidate : 변경된 SDRAM의 data로 기존 cache영역을 refresh
       - flush : 변경된 cache의 data를 SDRAM에 저장
       - user space에서는 device driver가 제공하는 api로 제어
+        - v4l2 : [DMA_BUF_IOCTL_SYNC](https://docs.kernel.org/driver-api/dma-buf.html)
+        - novatek : hd_common_mem_flush_cache
   + cache line size : 64bytes ??
     - https://stackoverflow.com/questions/794632/programmatically-get-the-cache-line-size
 * SDRAM
   + [addressing latency](https://www.google.com/search?q=addressing+latency+in+sdram)
   + [burst mode](https://www.google.com/search?q=burst+mode+in+sdram)
-  + 최대 성능을 내려면 quential access해야함
+  + 최대 성능을 내려면 sequential access해야함
 
 ## Data Alignment
 * 32bit vs 64bit system의 c/c++ type별 크기(bytes)
@@ -179,4 +199,19 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
   + [c11 aligned_alloc](https://en.cppreference.com/w/c/memory/aligned_alloc)
 
 ## Memory management
-### c++ smartpointer
+* [c/c++ 사용 중 흔한 메모리 오류](https://valgrind.org/docs/manual/mc-manual.html)
+  + Illegal read / Illegal write errors
+    - stack smashing
+  + Use of uninitialised values : 필요없는 상황에서도 variable 선언 시 초기화
+  + access after free : delete/free후 NULL, nullptr로 설정
+  + memory leak
+  + Illegal frees
+* c++ smart pointers
+  + free/delete 불필요 : memory leak, Illegal frees, access after free 방지
+  + std::unique_ptr : 한 object에 오직 하나의 pointer만 허용
+    - std::move : 소유권 이전
+  + std::shared_ptr : 한 object에 여러 pointer 허용
+    - reference count(thread safe)가 0이 되면 자동 delete
+    - std::weak_ptr : reference count에 영향을 미치지 않는 pointer
+
+# multi process/thread 및 data/memory 공유
