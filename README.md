@@ -221,3 +221,235 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
     - std::weak_ptr : reference count에 영향을 미치지 않는 pointer
 
 # multi process/thread 및 data/memory 공유
+## [process vs thread](https://www.geeksforgeeks.org/operating-systems/difference-between-process-and-thread/)
+| Process	| Thread
+|---      | ---
+| Program in execution | Part of a process
+| Takes more time to create & terminate | Takes less time to create & terminate
+| Context switching is slow | Context switching is fast
+| Heavyweight | Lightweight
+| **Has its own memory space** | **Shares memory with other threads**
+| **메모리 문제가 타 process에 영향 미치지 않음** | **메모리 문제가 process내부의 모든 thread에 영향을 미침**
+| Less efficient communication | More efficient communication
+| Blocking one process doesn’t affect others | Blocking a user-level thread may block all
+| Uses system calls	| Created using APIs (may not need OS call)
+| Has its own PCB, stack, address space	| Shares PCB & address space, has own TCB & stack
+| Does not share data	| Shares data with other threads
+## Posix process
+* 새로운 process의 생성 : [fork](https://man7.org/linux/man-pages/man2/fork.2.html)
+  + 예
+    ```c
+    #include <signal.h>
+    #include <stdint.h>
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <sys/types.h>
+    #include <unistd.h>
+
+    int
+    main(void)
+    {
+        pid_t pid;
+
+        if (signal(SIGCHLD, SIG_IGN) == SIG_ERR) {
+            perror("signal");
+            exit(EXIT_FAILURE);
+        }
+        pid = fork();
+        switch (pid) {
+        case -1:
+            perror("fork");
+            exit(EXIT_FAILURE);
+        case 0:
+            puts("Child exiting.");
+            fflush(stdout);
+            _exit(EXIT_SUCCESS);
+        default:
+            printf("Child is PID %jd\n", (intmax_t) pid);
+            puts("Parent exiting.");
+            exit(EXIT_SUCCESS);
+        }
+    }
+    ```
+  + exec : https://man7.org/linux/man-pages/man3/exec.3.html
+    ```c
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <unistd.h>
+    #include <sys/wait.h>
+
+    int main() {
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork failed"); exit(EXIT_FAILURE);
+        } else if (pid == 0) {
+            // Child: exec replaces the image with 'ls -l'
+            execl("/bin/ls", "ls", "-l", (char *)NULL); 
+            perror("execl failed"); exit(EXIT_FAILURE);
+        } else {
+            // Parent: wait for child
+            int status;
+            waitpid(pid, &status, 0);
+            if (WIFEXITED(status)) printf("Child exited with status %d\n", WEXITSTATUS(status));
+        }
+        return 0;
+    }
+    ```
+    - [close-on-exec](https://stackoverflow.com/questions/6125068/what-does-the-fd-cloexec-fcntl-flag-do) : parent process에서 open되어있던 file은 기본적으로 child process에서도 open되어 있음, exec시 close하기 위해서는 open시 O_CLOEXEC나 fcntl에서 FD_CLOEXEC를 사용해야
+      ```c
+      #include <unistd.h>
+      #include <fcntl.h>
+
+      int fd = open("filename", O_RDWR | O_CLOEXEC);
+      ```
+      ```c
+      #include <unistd.h>
+      #include <fcntl.h>
+
+      // ... after fd has been opened ...
+
+      // Get existing flags
+      int flags = fcntl(fd, F_GETFD);
+      if (flags == -1) {
+          // handle error
+      }
+      // Set the FD_CLOEXEC flag
+      if (fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == -1) {
+          // handle error
+      }
+      ```
+  + system : https://man7.org/linux/man-pages/man3/system.3.html
+    ```c
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <unistd.h>
+    #include <sys/wait.h>
+
+    int main() {
+        int status;
+        status = system("/bin/ls -l");
+        if (WIFEXITED(status)) printf("Child exited with status %d\n", WEXITSTATUS(status));
+        return 0;
+    }
+    ```
+  + [fork in multi threads](https://www.google.com/search?q=fork+in+multi+threads)
+* process 종료
+  + 자체 종료
+    - main()함수에서 return
+    - [exit vs _exit](https://www.google.com/search?q=exit+vs+_exit)
+  + 강제 종료 : kill
+    - 명령어 : https://man7.org/linux/man-pages/man1/kill.1.html
+    - system call : https://man7.org/linux/man-pages/man2/kill.2.html
+    - SIGTERM(15) vs SIGKILL(9)
+* signal : https://man7.org/linux/man-pages/man7/signal.7.html
+  + signal handler
+    - https://man7.org/linux/man-pages/man2/signal.2.html
+    - https://man7.org/linux/man-pages/man2/sigaction.2.html
+* parent / child 관계
+  + child process 종료 대기 : https://man7.org/linux/man-pages/man2/waitpid.2.html
+    - 종료시 상태 확인
+      ```c
+      do {
+          w = waitpid(cpid, &wstatus, WUNTRACED | WCONTINUED);
+          if (w == -1) {
+              perror("waitpid");
+              exit(EXIT_FAILURE);
+          }
+
+          if (WIFEXITED(wstatus)) {
+              printf("exited, status=%d\n", WEXITSTATUS(wstatus));
+          } else if (WIFSIGNALED(wstatus)) {
+              printf("killed by signal %d\n", WTERMSIG(wstatus));
+          } else if (WIFSTOPPED(wstatus)) {
+              printf("stopped by signal %d\n", WSTOPSIG(wstatus));
+          } else if (WIFCONTINUED(wstatus)) {
+              printf("continued\n");
+          }
+      } while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
+      ```
+    - zombie process : wait/waitpid로 종료 처리하지 않으면 resource leak이 발생 : memory, process갯수 제한 등
+  + orphan process : parent process가 먼저 종료된 상황
+    - 보통 process 1으로 재 parent화
+    - terminal은 종료시 모든 child process를 종료 : [tmux](https://man7.org/linux/man-pages/man1/tmux.1.html)사용하여 오래걸리는 명령을 실행하면 이와 같은 문제 회피 가능
+    - [daemon](https://man7.org/linux/man-pages/man7/daemon.7.html)
+## threads
+* posix
+  + pthread_create : https://www.man7.org/linux/man-pages/man3/pthread_create.3.html
+    ```c
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <pthread.h>
+
+    void *thread_proc(void *thread_arg) {
+      void *thread_result = NULL;
+      /* ..... */
+      return thread_result;
+    }
+
+    int main() {
+      int ret;
+      pthread_t thread_id;
+      void *thread_arg = NULL;
+      void *thread_result = NULL;
+      /* prepare thread_arg */
+      ret = pthread_create(&thread_id, NULL, thread_proc, thread_arg);
+      if (ret != 0) {
+        fprintf(stderr, "pthread_create failed(%d)\n", ret);
+        return 1;
+      }
+      /* ..... */
+      ret = pthread_join(thread_id, &thread_result);
+      if (ret != 0) {
+        fprintf(stderr, "pthread_join failed(%d)\n", ret);
+        return 1;
+      }
+      printf("thread result is %p\n", thread_result);
+      /* ..... */
+      return 0;
+    }
+    ```
+  + pthread_join : https://man7.org/linux/man-pages/man3/pthread_join.3.html
+    - 사용하지 않으면 resource leak발생 : 메모리 및 생성 가능한 thread수
+    - pthread_cancel : 너무 위험한 API
+  + pthread_detach : https://man7.org/linux/man-pages/man3/pthread_detach.3.html
+    - pthread_join 불필요, thread종료시 연관된 resource가 자동 제거
+    - 가능하면 사용하지 않는게 좋음
+* [c++11](https://en.cppreference.com/w/cpp/thread/thread.html)
+    ```c++
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <thread>
+
+    class MyThread {
+    public:
+      MyThread(void *arg) : _arg(arg) {}
+      inline void *result() {return _result;}
+      void start() {
+        _th = std::thread(&MyThread::thread_proc, this);
+      }
+      void join() {
+        if (_th.joinable())
+          _th.join();
+      }
+    private:
+      void thread_proc() {
+        /* .... */
+      }
+      std::thread _th;
+      void *_arg {NULL};
+      void *_result {NULL};
+    };
+
+    int main() {
+      int ret;
+      void *thread_arg = NULL;
+      /* prepare thread_arg */
+      MyThread th(thread_arg);
+      th.start();
+      /* ..... */
+      th.join();
+      printf("thread result is %p\n", th.result());
+      /* ..... */
+      return 0;
+    }
+    ```
