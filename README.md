@@ -9,13 +9,13 @@
 
 ## [QCS6490](https://www.qualcomm.com/internet-of-things/products/q6-series/qcs6490) 구조
 ![QCS6490 Architecture](qcs6490_architecture.jpg)
-* CPU
-  + Silver Cores (x4)
+* CPU : Qualcomm® Kryo™ 670
+  + Silver Cores (x4) : Cortex A55
       - L1 cache : 32KB I/D
       - L2 cache : 128KB
-  + Gold Cores (x3), Prime Core (x1)
+  + Gold Cores (x3), Prime Core (x1) : Cortex A78
       - L1 cache : 32KB I/D
-      - L2 cache : 128KB
+      - L2 cache : 512KB
   + L3 cache : 2MiB
 * HTP(NPU, hexagon dsp)
   + 1MB L2 cache
@@ -27,7 +27,10 @@
 ```mermaid
 graph LR
 A[Camera Sensor] -->|Bayer| C(ISP)
-  C -->|NV12| D(H.264 Encoder) --> G[SD Card 저장]
+  C -->|NV12| N{해상도 변환 필요 ?}
+  N -->|불필요| D
+  N -->|필요| O(Scaler/GPU) --> |NV12| D
+  D(H.264 Encoder) --> G[SD Card 저장]
   C -->|NV12| E(Scaler/GPU) -->|NV12| F(H.264 Encoder) --> H[Network 전송]
   C -->|NV12| I(Scaler/GPU) -->|NV12/RGB| J[NPU/AI]
   C -->|NV12| K(Scaler/GPU) -->|NV12| L(FrameBuffer) --> M[Screen]
@@ -36,7 +39,10 @@ A[Camera Sensor] -->|Bayer| C(ISP)
 ```mermaid
 graph LR
 A[Analog Camera] -->|AHD| B(AHD Decoder) -->|UYVY| C(Scaler/GPU)
-  C -->|NV12| D(H.264 Encoder) --> G[SD Card 저장]
+  C -->|NV12| N{해상도 변환 필요 ?}
+  N -->|불필요| D
+  N -->|필요| O(Scaler/GPU) --> |NV12| D
+  D(H.264 Encoder) --> G[SD Card 저장]
   C -->|NV12| E(Scaler/GPU) -->|NV12| F(H.264 Encoder) --> H[Network 전송]
   C -->|NV12| I(Scaler/GPU) -->|NV12/RGB| J[NPU/AI]
   C -->|NV12| K(Scaler/GPU) -->|NV12| L(FrameBuffer) --> M[Screen]
