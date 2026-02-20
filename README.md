@@ -182,7 +182,7 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
       // 2bytes padding
       int32_t b;
       int16_t c;
-      // 2bytes padding ??
+      // 2bytes padding !!
     };
     struct A {
       int16_t a;
@@ -373,19 +373,17 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
     - terminal은 종료시 모든 child process를 종료 : [tmux](https://man7.org/linux/man-pages/man1/tmux.1.html)사용하여 오래걸리는 명령을 실행하면 이와 같은 문제 회피 가능
     - [daemon](https://man7.org/linux/man-pages/man7/daemon.7.html)
 ## threads
-* posix
+* posix thread
   + pthread_create : https://www.man7.org/linux/man-pages/man3/pthread_create.3.html
     ```c
     #include <stdio.h>
     #include <stdlib.h>
     #include <pthread.h>
-
-    void *thread_proc(void *thread_arg) {
+    static void *thread_proc(void *thread_arg) {
       void *thread_result = NULL;
       /* ..... */
       return thread_result;
     }
-
     int main() {
       int ret;
       pthread_t thread_id;
@@ -414,12 +412,11 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
   + pthread_detach : https://man7.org/linux/man-pages/man3/pthread_detach.3.html
     - pthread_join 불필요, thread종료시 연관된 resource가 자동 제거
     - 가능하면 사용하지 않는게 좋음
-* [c++11](https://en.cppreference.com/w/cpp/thread/thread.html)
+* [c++11 std::thread](https://en.cppreference.com/w/cpp/thread/thread.html)
     ```c++
     #include <stdio.h>
     #include <stdlib.h>
     #include <thread>
-
     class MyThread {
     public:
       MyThread(void *arg) : _arg(arg) {}
@@ -439,7 +436,6 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
       void *_arg {NULL};
       void *_result {NULL};
     };
-
     int main() {
       int ret;
       void *thread_arg = NULL;
@@ -453,3 +449,163 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
       return 0;
     }
     ```
+* thread간 data sharing
+  + 문제점
+    ```c++
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <thread>
+    struct MySharedData {
+      long value {0};
+      void add(int delta) {
+        value += delta;
+      }
+    };
+    static void thread_proc(MySharedData *psd, int delta, unsigned int loop_count) {
+      unsigned int seed = 12345; // Initial seed value
+      for (unsigned int i = 0; i < loop_count; ++i) {
+        psd->add(delta);
+        seed += (unsigned int) psd->value;
+        seed += rand_r(&seed);
+      }
+      printf("thread(%d) random result : %u\n", delta, seed);
+    }
+    int main() {
+      const unsigned int N_LOOP = 100000;
+      MySharedData sd;
+      std::thread th_a(thread_proc, &sd,  1, N_LOOP);
+      std::thread th_b(thread_proc, &sd, -1, N_LOOP);
+      /* .... */
+      th_a.join();
+      th_b.join();
+      printf("last value : %ld\n", sd.value);
+      return 0;
+    }
+    ```
+  + mutex
+    - [pthread_mutex_lock](https://man7.org/linux/man-pages/man3/pthread_mutex_lock.3.html)
+    - [c++11 std::mutex](https://en.cppreference.com/w/cpp/thread/mutex.html)
+      ```c++
+      #include <mutex>
+      struct MySharedData {
+        std::mutex mutex;
+        long value {0};
+        void add(int delta) {
+          mutex.lock();
+          value += delta;
+          mutex.unlock();
+        }
+      };
+      ```
+      ```c++
+      // ...
+        void add(int delta) {
+          std::lock_guard<std::mutex> lk(mutex); // lk constructor가 mutex를 lock
+          value += delta;
+          // stack에서 빠져나가면서 lk의 destructor가 mutex를 unlock
+        }
+      // ...
+      ```
+    - [c++11 std::atmoc](https://en.cppreference.com/w/cpp/atomic/atomic.html)
+      ```c++
+      #include <atomic>
+      struct MySharedData {
+        std::atomic<long> value {0};
+        void add(int delta) {
+          value += delta;
+        }
+      };
+      ```
+      https://gcc.gnu.org/onlinedocs/gcc/_005f_005fatomic-Builtins.html
+    - [mutex vs atmoic](https://www.google.com/search?q=mutex+vs+atomic)
+      | Feature | Mutex	| Atomic Operation
+      |---      |---    |---
+      | Protected Scope	| Multiple variables or complex data structures	| Single basic variable
+      | Mechanism	| [OS-managed software lock](https://en.wikipedia.org/wiki/Futex) | [Hardware-level CPU instruction](https://stackoverflow.com/questions/22282689/atomic-operations-and-code-generation-for-gcc)
+      | Performance	| Slower (involves context switching if contended) | Faster (avoids OS overhead)
+      | Waiting Strategy | Thread is put to sleep by the OS if the resource is locked	| May busy-wait (spin) for a short period or use special hardware instructions to avoid waiting
+      | Complexity | Simpler to use for complex logic; correctness is more straightforward | Requires careful use and understanding of memory models for complex scenarios
+    - [recursive mutex](https://en.cppreference.com/w/cpp/thread/recursive_mutex.html)
+      ```c++
+      class MySharedData {
+      public:
+        inline long add(int delta) {
+          std::lock_guard<std::mutex> lk(_mutex);
+          _value += delta;
+          return _value;
+        }
+        inline long add10(int delta) {
+          std::lock_guard<std::mutex> lk(_mutex);
+          _value += 10;
+          return add(delta); // blocking
+        }
+        inline long value() {
+          std::lock_guard<std::mutex> lk(_mutex);
+          return _value;
+        }
+      private:
+        std::mutex _mutex;
+        long _value {0};
+      };
+      ```
+      - solution : std::mutex => std::recursive_mutex (동일 thread에서 여러번 lock할 수 있음, 단 lock한 수 만큼 unlock해야함)
+    - [deadlock](https://stackoverflow.com/questions/34512/what-is-a-deadlock)
+      ```c++
+      class MySharedData {
+      public:
+        inline long add_a_b(int delta) { // deadlock with add_b_a
+          std::lock_guard<std::mutex> lk_a(_mutex_a);
+          _value_a += delta;
+          std::lock_guard<std::mutex> lk_b(_mutex_b);
+          _value_b += _value_a;
+          return _value_b;
+        }
+        inline long add_b_a(int delta) { // deadlock with add_b_a
+          std::lock_guard<std::mutex> lk_b(_mutex_b);
+          _value_b += delta;
+          std::lock_guard<std::mutex> lk_a(_mutex_a);
+          _value_a += _value_b;
+          return _value_b;
+        }
+        inline long value_a() {
+          std::lock_guard<std::mutex> lk(_mutex_a);
+          return _value_a;
+        }
+        inline long value_b() {
+          std::lock_guard<std::mutex> lk(_mutex_b);
+          return _value_b;
+        }
+      private:
+        std::mutex _mutex_a;
+        long _value_a {0};
+        std::mutex _mutex_b;
+        long _value_b {0};
+      };
+      static void thread_proc_a_b(MySharedData *psd, int delta, unsigned int loop_count) {
+        unsigned int seed = 12345; // Initial seed value
+        for (unsigned int i = 0; i < loop_count; ++i) {
+          seed += (unsigned int) psd->add_a_b(delta);
+          seed += rand_r(&seed);
+        }
+        printf("thread(%d) random result : %u\n", delta, seed);
+      }
+      static void thread_proc_b_a(MySharedData *psd, int delta, unsigned int loop_count) {
+        unsigned int seed = 12345; // Initial seed value
+        for (unsigned int i = 0; i < loop_count; ++i) {
+          seed += (unsigned int) psd->add_b_a(delta);
+          seed += rand_r(&seed);
+        }
+        printf("thread(%d) random result : %u\n", delta, seed);
+      }
+      int main() {
+        const unsigned int N_LOOP = 100000;
+        MySharedData sd;
+        std::thread th_a(thread_proc_a_b, &sd,  1, N_LOOP);
+        std::thread th_b(thread_proc_b_a, &sd, -1, N_LOOP);
+        /* ... */
+        th_a.join();
+        th_b.join();
+        printf("last value : %ld\n", sd.value_a());
+        return 0;
+      }
+      ```
