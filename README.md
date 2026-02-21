@@ -235,143 +235,6 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
 | Uses system calls	| Created using APIs (may not need OS call)
 | Has its own PCB, stack, address space	| Shares PCB & address space, has own TCB & stack
 | Does not share data	| Shares data with other threads
-## Posix process
-* 새로운 process의 생성 : [fork](https://man7.org/linux/man-pages/man2/fork.2.html)
-  + 예
-    ```c
-    #include <signal.h>
-    #include <stdint.h>
-    #include <stdio.h>
-    #include <stdlib.h>
-    #include <sys/types.h>
-    #include <unistd.h>
-
-    int
-    main(void)
-    {
-        pid_t pid;
-
-        if (signal(SIGCHLD, SIG_IGN) == SIG_ERR) {
-            perror("signal");
-            exit(EXIT_FAILURE);
-        }
-        pid = fork();
-        switch (pid) {
-        case -1:
-            perror("fork");
-            exit(EXIT_FAILURE);
-        case 0:
-            puts("Child exiting.");
-            fflush(stdout);
-            _exit(EXIT_SUCCESS);
-        default:
-            printf("Child is PID %jd\n", (intmax_t) pid);
-            puts("Parent exiting.");
-            exit(EXIT_SUCCESS);
-        }
-    }
-    ```
-  + exec : https://man7.org/linux/man-pages/man3/exec.3.html
-    ```c
-    #include <stdio.h>
-    #include <stdlib.h>
-    #include <unistd.h>
-    #include <sys/wait.h>
-
-    int main() {
-        pid_t pid = fork();
-        if (pid < 0) {
-            perror("fork failed"); exit(EXIT_FAILURE);
-        } else if (pid == 0) {
-            // Child: exec replaces the image with 'ls -l'
-            execl("/bin/ls", "ls", "-l", (char *)NULL); 
-            perror("execl failed"); exit(EXIT_FAILURE);
-        } else {
-            // Parent: wait for child
-            int status;
-            waitpid(pid, &status, 0);
-            if (WIFEXITED(status)) printf("Child exited with status %d\n", WEXITSTATUS(status));
-        }
-        return 0;
-    }
-    ```
-    - [close-on-exec](https://stackoverflow.com/questions/6125068/what-does-the-fd-cloexec-fcntl-flag-do) : parent process에서 open되어있던 file은 기본적으로 child process에서도 open되어 있음, exec시 close하기 위해서는 open시 O_CLOEXEC나 fcntl에서 FD_CLOEXEC를 사용해야
-      ```c
-      #include <unistd.h>
-      #include <fcntl.h>
-
-      int fd = open("filename", O_RDWR | O_CLOEXEC);
-      ```
-      ```c
-      #include <unistd.h>
-      #include <fcntl.h>
-
-      // ... after fd has been opened ...
-
-      // Get existing flags
-      int flags = fcntl(fd, F_GETFD);
-      if (flags == -1) {
-          // handle error
-      }
-      // Set the FD_CLOEXEC flag
-      if (fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == -1) {
-          // handle error
-      }
-      ```
-  + system : https://man7.org/linux/man-pages/man3/system.3.html
-    ```c
-    #include <stdio.h>
-    #include <stdlib.h>
-    #include <unistd.h>
-    #include <sys/wait.h>
-
-    int main() {
-        int status;
-        status = system("/bin/ls -l");
-        if (WIFEXITED(status)) printf("Child exited with status %d\n", WEXITSTATUS(status));
-        return 0;
-    }
-    ```
-  + [fork in multi threads](https://www.google.com/search?q=fork+in+multi+threads)
-* process 종료
-  + 자체 종료
-    - main()함수에서 return
-    - [exit vs _exit](https://www.google.com/search?q=exit+vs+_exit)
-  + 강제 종료 : kill
-    - 명령어 : https://man7.org/linux/man-pages/man1/kill.1.html
-    - system call : https://man7.org/linux/man-pages/man2/kill.2.html
-    - SIGTERM(15) vs SIGKILL(9)
-* signal : https://man7.org/linux/man-pages/man7/signal.7.html
-  + signal handler
-    - https://man7.org/linux/man-pages/man2/signal.2.html
-    - https://man7.org/linux/man-pages/man2/sigaction.2.html
-* parent / child 관계
-  + child process 종료 대기 : https://man7.org/linux/man-pages/man2/waitpid.2.html
-    - 종료시 상태 확인
-      ```c
-      do {
-          w = waitpid(cpid, &wstatus, WUNTRACED | WCONTINUED);
-          if (w == -1) {
-              perror("waitpid");
-              exit(EXIT_FAILURE);
-          }
-
-          if (WIFEXITED(wstatus)) {
-              printf("exited, status=%d\n", WEXITSTATUS(wstatus));
-          } else if (WIFSIGNALED(wstatus)) {
-              printf("killed by signal %d\n", WTERMSIG(wstatus));
-          } else if (WIFSTOPPED(wstatus)) {
-              printf("stopped by signal %d\n", WSTOPSIG(wstatus));
-          } else if (WIFCONTINUED(wstatus)) {
-              printf("continued\n");
-          }
-      } while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
-      ```
-    - zombie process : wait/waitpid로 종료 처리하지 않으면 resource leak이 발생 : memory, process갯수 제한 등
-  + orphan process : parent process가 먼저 종료된 상황
-    - 보통 process 1으로 재 parent화
-    - terminal은 종료시 모든 child process를 종료 : [tmux](https://man7.org/linux/man-pages/man1/tmux.1.html)사용하여 오래걸리는 명령을 실행하면 이와 같은 문제 회피 가능
-    - [daemon](https://man7.org/linux/man-pages/man7/daemon.7.html)
 ## threads
 ### posix thread
 * pthread_create : https://www.man7.org/linux/man-pages/man3/pthread_create.3.html
@@ -638,7 +501,7 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
     - spinlock : interrupt context에서 사용 가능, blocking이 불가능하므로 짧은 시간동안 lock을 유지해야함
     - mutex : blocking이 가능하므로 긴 시간동안 lock을 유지할 수 있음, interrupt context에서 사용 불가능
 * condition variable
-  + [std::condition_variable](https://en.cppreference.com/w/cpp/thread/condition_variable) : signal과 mutex를 같이 사용하여 thread간의 효율적인 통신 가능
+  + [std::condition_variable](https://en.cppreference.com/w/cpp/thread/condition_variable) : mutex와 같이 사용하여 thread간의 효율적인 통신
     ```c++
     #inclue <stdio.h>
     #include <thread>
@@ -690,3 +553,191 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
       return 0;
     }
     ```
+* thread safety
+  + reentrant function : 여러 thread에서 동시에 호출되어도 안전하게 동작하는 함수
+    - static/global variable을 사용하지 않음
+    - parameter로 전달된 variable만 사용
+    - pointer나 reference로 전달된 variable에 대해서는 caller가 thread safe하게 접근해야
+  + [reentrant 하지 않은 c library 함수](https://developer.arm.com/documentation/109445/6-22-2LTS/The-C-and-C---Library-Functions-Reference/C-library-functions-that-are-not-thread-safe)는 어떤경우에도 사용하지 말자
+## Posix process
+### 새로운 process의 생성 : [fork()](https://man7.org/linux/man-pages/man2/fork.2.html)
+  ```c
+  #include <signal.h>
+  #include <stdint.h>
+  #include <stdio.h>
+  #include <stdlib.h>
+  #include <sys/types.h>
+  #include <unistd.h>
+
+  int
+  main(void)
+  {
+      pid_t pid;
+
+      if (signal(SIGCHLD, SIG_IGN) == SIG_ERR) {
+          perror("signal");
+          exit(EXIT_FAILURE);
+      }
+      pid = fork();
+      switch (pid) {
+      case -1:
+          perror("fork");
+          exit(EXIT_FAILURE);
+      case 0:
+          puts("Child exiting.");
+          fflush(stdout);
+          _exit(EXIT_SUCCESS);
+      default:
+          printf("Child is PID %jd\n", (intmax_t) pid);
+          puts("Parent exiting.");
+          exit(EXIT_SUCCESS);
+      }
+  }
+  ```
+  * [copy-on-write](https://en.wikipedia.org/wiki/Copy-on-write) : fork시 부모 프로세스의 메모리를 자식 프로세스가 공유하지만, 자식 프로세스가 해당 메모리를 수정하려고 할 때 부모 프로세스의 메모리를 복사하여 자식 프로세스에게 할당하는 방식
+  * fork 직후 parent와 child의 차이는 오직 return value임
+### 현재 process를 새로운 program으로 대체 : [exec(...)](https://man7.org/linux/man-pages/man3/exec.3.html)
+  ```c
+  #include <stdio.h>
+  #include <stdlib.h>
+  #include <unistd.h>
+  #include <sys/wait.h>
+
+  int main() {
+      pid_t pid = fork();
+      if (pid < 0) {
+          perror("fork failed"); exit(EXIT_FAILURE);
+      } else if (pid == 0) {
+          // Child: exec replaces the image with 'ls -l'
+          execl("/bin/ls", "ls", "-l", (char *)NULL); 
+          perror("execl failed"); exit(EXIT_FAILURE);
+      } else {
+          // Parent: wait for child
+          int status;
+          waitpid(pid, &status, 0);
+          if (WIFEXITED(status)) printf("Child exited with status %d\n", WEXITSTATUS(status));
+      }
+      return 0;
+  }
+  ```
+  * [close-on-exec](https://stackoverflow.com/questions/6125068/what-does-the-fd-cloexec-fcntl-flag-do) :  open(...)시 O_CLOEXEC나 fcntl(...)에서 FD_CLOEXEC를 사용해서 close-on-exec flag를 설정하면 exec(...)시 해당 file descriptor가 자동으로 close됨
+    ```c
+    #include <unistd.h>
+    #include <fcntl.h>
+
+    int fd = open("filename", O_RDWR | O_CLOEXEC);
+    ```
+    ```c
+    #include <unistd.h>
+    #include <fcntl.h>
+
+    // ... after fd has been opened ...
+
+    // Get existing flags
+    int flags = fcntl(fd, F_GETFD);
+    if (flags == -1) {
+        // handle error
+    }
+    // Set the FD_CLOEXEC flag
+    if (fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == -1) {
+        // handle error
+    }
+    ```
+### system("...") : https://man7.org/linux/man-pages/man3/system.3.html
+  * fork + exec + wait의 wrapper
+    ```c
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <unistd.h>
+    #include <sys/wait.h>
+
+    int main() {
+        int status;
+        status = system("/bin/ls -l");
+        if (WIFEXITED(status)) printf("Child exited with status %d\n", WEXITSTATUS(status));
+        return 0;
+    }
+    ```
+  * [fork in multi threads](https://www.google.com/search?q=fork+in+multi+threads)
+### process 종료 및 상태
+  * 자체 종료
+    + main()함수에서 return
+    + [exit vs _exit](https://www.google.com/search?q=exit+vs+_exit)
+  * 강제 종료 : kill
+    + 명령어 : https://man7.org/linux/man-pages/man1/kill.1.html
+    + system call : https://man7.org/linux/man-pages/man2/kill.2.html
+    + SIGTERM(15) vs SIGKILL(9)
+  * signal : https://man7.org/linux/man-pages/man7/signal.7.html
+    + signal handler
+      - https://man7.org/linux/man-pages/man2/signal.2.html
+      - https://man7.org/linux/man-pages/man2/sigaction.2.html
+  * parent / child 관계
+    + child process 종료 대기 : https://man7.org/linux/man-pages/man2/waitpid.2.html
+      - 종료시 상태 확인
+        ```c
+        do {
+            w = waitpid(cpid, &wstatus, WUNTRACED | WCONTINUED);
+            if (w == -1) {
+                perror("waitpid");
+                exit(EXIT_FAILURE);
+            }
+
+            if (WIFEXITED(wstatus)) {
+                printf("exited, status=%d\n", WEXITSTATUS(wstatus));
+            } else if (WIFSIGNALED(wstatus)) {
+                printf("killed by signal %d\n", WTERMSIG(wstatus));
+            } else if (WIFSTOPPED(wstatus)) {
+                printf("stopped by signal %d\n", WSTOPSIG(wstatus));
+            } else if (WIFCONTINUED(wstatus)) {
+                printf("continued\n");
+            }
+        } while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
+        ```
+      - zombie process : wait/waitpid로 종료 처리하지 않으면 resource leak이 발생 : memory, process갯수 제한 등
+    + orphan process : parent process가 먼저 종료된 상황
+      - 보통 process 1으로 재 parent화
+      - terminal은 종료시 모든 child process를 종료 : [tmux](https://man7.org/linux/man-pages/man1/tmux.1.html)사용하여 오래걸리는 명령을 실행하면 이와 같은 문제 회피 가능
+      - [daemon](https://man7.org/linux/man-pages/man7/daemon.7.html)
+### Low Level IPC
+  * [pipe](https://man7.org/linux/man-pages/man2/pipe.2.html)
+    ```c
+    #define _GNU_SOURCE             /* See feature_test_macros(7) */
+    #include <fcntl.h>              /* Definition of O_* constants */
+    #include <unistd.h>
+    int pipe2(int pipefd[2], int flags);
+    ```
+    + pipefd[0] : read end, pipefd[1] : write end
+    + fork 후 부모와 자식이 pipe를 공유하여 통신 가능
+  * [fifo](https://man7.org/linux/man-pages/man3/mkfifo.3.html)
+    ```c
+    #include <sys/stat.h>
+    int mkfifo(const char *pathname, mode_t mode);
+    ```
+    + named pipe라고도 불리는 fifo는 파일 시스템에 존재하는 특별한 파일로, 여러 프로세스가 이 파일을 통해 통신할 수 있도록 함
+  * [posix message queue](https://man7.org/linux/man-pages/man7/mq_overview.7.html)
+    + bi-directional 통신 가능
+    + priority 지원
+  * [local/ unix domain socket](https://man7.org/linux/man-pages/man7/unix.7.html)
+    + [sending file descriptors over unix domain sockets](https://stackoverflow.com/questions/28003921/sending-file-descriptor-by-linux-socket)
+  * shared memory
+    + [posix shared memory](https://man7.org/linux/man-pages/man7/shm_overview.7.html)
+      ```c
+      #include <sys/mman.h>
+      #include <sys/stat.h>        /* For mode constants */
+      #include <fcntl.h>           /* For O_* constants */
+      int shm_open(const char *path, int oflag, mode_t mode);
+      int shm_unlink(const char *path);
+      ```
+    + [memfd](https://man7.org/linux/man-pages/man2/memfd_create.2.html)
+      ```c
+      #include <sys/mman.h>
+      #include <sys/stat.h>        /* For mode constants */
+      #include <fcntl.h>           /* For O_* constants */
+      int memfd_create(const char *name, unsigned int flags);
+      ```
+    + ftruncate(...), mmap(...)과 같이 사용
+    + shared memory file descriptor를 unix domain socket을 통해 다른 process로 전달하여 공유 가능
+    + synchronization
+      - [posix semaphore](https://man7.org/linux/man-pages/man7/sem_overview.7.html)
+      - [mutex in shared memory](https://stackoverflow.com/questions/42628949/using-pthread-mutex-shared-between-processes-correctly)
+  
