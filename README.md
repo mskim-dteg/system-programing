@@ -182,7 +182,7 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
       // 2bytes padding
       int32_t b;
       int16_t c;
-      // 2bytes padding !!
+      // 2bytes padding !!, array로 접근할 때 문제가 발생하지 않도록 하기 위해서
     };
     struct A {
       int16_t a;
@@ -219,6 +219,34 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
   + std::shared_ptr : 한 object에 여러 pointer 허용
     - reference count(thread safe)가 0이 되면 자동 delete
     - std::weak_ptr : reference count에 영향을 미치지 않는 pointer
+## gcc/g++ version
+* gcc의 c++ 지원 현황 : https://gcc.gnu.org/projects/cxx-status.html
+  + c++11 : GCC 4.8.1 (-std=c++11)
+    ```
+    GCC 4.8.1 was the first feature-complete implementation of the 2011 C++ standard
+    ```
+  + c++14 : GCC 6 (-std=c++14)
+    ```
+    This mode is the default in GCC 6.1 up until GCC 10 (inclusive)
+    ```
+  + c++17 : GCC 9 (-std=c++17)
+    ```
+    This mode is the default in GCC 11 up until GCC 15 (inclusive); the ABI of C++17 features was not stable until GCC 9.
+    ```
+  + c++20 : GCC 10 (-std=c++20)
+    ```
+    C++20 mode is the default since GCC 16. the ABI of C++20 features was not stable until GCC 16. C++20 modules support is still experimental
+    ```
+* SOC별 gcc version
+  | SOC             | gcc version | c++ standard | target
+  |---              |---          |---           |---
+  | A40             | 4.6.3       | c++0x        | arm
+  | SC606T          | 4.9.3       | c++11        | arm
+  | SAV837          | 9.1         | c++17        | arm hardfloat
+  | NT984336        | 8.4         | c++14        | aarch64
+  | QCS6125(SC696S) | 9.3         | c++17        | aarch64
+  | QCS6490/5430    | 11.5        | c++20        | aarch64
+  | EN683           | 14.2        | c++20        | riscv64
 
 # multi process/thread 및 data/memory 공유
 ## [process vs thread](https://www.geeksforgeeks.org/operating-systems/difference-between-process-and-thread/)
@@ -369,6 +397,9 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
       }
     // ...
     ```
+  + mutex의 용도
+    - ~~critical section : 여러 thread가 동시에 접근해서는 안되는 code block 보호~~
+    - shared data : 여러 thread가 동시에 접근하는 shared data 보호, shared data group하나당 mutex한개 사용하는게 좋음
   + [c++11 std::atmoc](https://en.cppreference.com/w/cpp/atomic/atomic.html)
     ```c++
     #include <atomic>
@@ -553,6 +584,9 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
       return 0;
     }
     ```
+  + 일방통행 : 동일한 condition variable에 대해 하나의 thread가 notify와 wait를 동시에 수행하지 않도록 주의
+    - 양방통행 : 거의 불가능
+    - notify와 wait가 동시에 수행되는 경우 notify가 wait보다 먼저 수행되어서 wait가 영원히 대기하는 상황 발생 가능
 * thread safety
   + reentrant function : 여러 thread에서 동시에 호출되어도 안전하게 동작하는 함수
     - static/global variable을 사용하지 않음
@@ -708,6 +742,10 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
     ```
     + pipefd[0] : read end, pipefd[1] : write end
     + fork 후 부모와 자식이 pipe를 공유하여 통신 가능
+    + broken pipe : write end가 닫힌 pipe에 write하려고 할 때 발생하는 signal
+      - SIGPIPE(13) : default action은 process 종료, signal handler에서 무시하거나 다른 행동으로 제어 가능
+      - fcntl을 사용하여 write end가 닫힌 pipe에 write하려고 할 때 발생하는 EPIPE error로 제어 가능
+    + [popen/pclose](https://man7.org/linux/man-pages/man3/popen.3.html) : pipe + [dup2](https://man7.org/linux/man-pages/man2/dup.2.html) + fork + exec
   * [fifo](https://man7.org/linux/man-pages/man3/mkfifo.3.html)
     ```c
     #include <sys/stat.h>
@@ -740,4 +778,5 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
     + synchronization
       - [posix semaphore](https://man7.org/linux/man-pages/man7/sem_overview.7.html)
       - [mutex in shared memory](https://stackoverflow.com/questions/42628949/using-pthread-mutex-shared-between-processes-correctly)
-  
+
+# API design
