@@ -443,7 +443,7 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
     };
     ```
     - solution : std::mutex => std::recursive_mutex (동일 thread에서 여러번 lock할 수 있음, 단 lock한 수 만큼 unlock해야함)
-  + [deadlock](https://stackoverflow.com/questions/34512/what-is-a-deadlock)
+  + [deadlock 문제](https://stackoverflow.com/questions/34512/what-is-a-deadlock)
     ```c++
     class MySharedData {
     public:
