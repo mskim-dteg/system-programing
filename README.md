@@ -805,3 +805,99 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
   + [GstMemory](https://gstreamer.freedesktop.org/documentation/gstreamer/gstmemory.html?gi-language=c)와 [GstMeta](https://gstreamer.freedesktop.org/documentation/gstreamer/gstmeta.html?gi-language=c)로 구성
     - GstMemory : multimedia data가 저장된 memory block에 대한 정보
     - GstMeta : multimedia data에 대한 추가 정보(metadata) : timestamp, object detection 결과, ...
+* 장/단점
+  + 장점
+    - 필요한 기능을 plugin 형태로 쉽게 확장 가능
+    - 다양한 기존 plugin 재사용 가능
+  + 단점
+    - 복잡한 구조
+    - heavy dependency
+### [Pipewire Simple Plugin API](https://docs.pipewire.org/page_spa.html)
+* Design
+  + Types
+    - String types
+    - Integer types
+  + Error Codes : negative integer
+* Plugins
+  + Design Overview
+    - No dependencies, SPA is shipped as a set of header files that have no dependencies except for the standard C library.
+    - Extensible; new API can be added with minimal effort, existing API can be updated and versioned
+  + Plugin usage
+    - Load the shared library.
+    - Enumerate the available factories.
+    - Enumerate the interfaces in each factory.
+    - Instantiate the desired interface.
+    - Use the interface-specific functions.
+  + Open A Plugin
+    ```c
+    #define SPA_PLUGIN_DIR  /usr/lib64/spa-0.2/"
+    void *hnd = dlopen(SPA_PLUGIN_DIR"/support/libspa-support.so", RTLD_NOW);
+    ```
+    ```c
+    #define 	SPA_HANDLE_FACTORY_ENUM_FUNC_NAME   "spa_handle_factory_enum"
+    typedef int(* spa_handle_factory_enum_func_t) (const struct spa_handle_factory **factory, uint32_t *index)
+    spa_handle_factory_enum_func_t enum_func;
+    enum_func = dlsym(hnd, SPA_HANDLE_FACTORY_ENUM_FUNC_NAME));
+    ```
+  + Enumerating Factories
+    ```c
+    struct spa_handle_factory {
+      uint32_t version;
+      const char *name;
+      // ....
+    };
+
+    uint32_t i;
+    const struct spa_handle_factory *factory = NULL;
+    for (i = 0;;) {
+      if (enum_func(&factory, &i) <= 0)
+        break;
+      // check name and version, introspect interfaces,
+      // do something with the factory.
+    }
+    ```
+  + Making A Handle
+    - get the size of the required memory
+      ```c
+      struct spa_dict *extra_params = NULL;
+      size_t size = spa_handle_factory_get_size(factory, extra_params);
+      ```
+    - allocate the memory and initialize the object in it
+      ```c
+      struct spa_handle {
+        uint32_t version;
+        int (*get_interface) (struct spa_handle *handle, const char *type, void **iface);
+        int (*clear) (struct spa_handle *handle);
+      };
+
+      struct spa_handle *handle = (struct spa_handle *) calloc(1, size);
+      spa_handle_factory_init(factory, handle, extra_params/*info*/,  NULL/*support*/, 0 /*n_support*/);
+      ```
+      support/n_support : handle이 의존하는 다른 handle의 interface를 제공하기 위한 parameter, 보통은 NULL/0으로 설정
+  + Clearing An Object
+    - clear handle
+      ```c
+      spa_handle_clear(handle);
+      free(handle);
+      ```
+    - close shared library
+      ```c
+      dlclose(hnd);
+      ```
+  + Retrieving An Interface
+    - 예시 : log interface
+      ```c
+      void *iface;
+      spa_handle_get_interface(handle, SPA_NAME_SUPPORT_LOG, &iface);
+      struct spa_interface {
+        const char *type;
+        uint32_t version;
+        struct spa_callbacks cb;
+      };
+      struct spa_log {
+        struct spa_interface iface;
+        enum spa_log_level level;
+      };
+      struct spa_log *log = iface;
+      spa_log_warn(log, "Hello World!\n");
+      ```
