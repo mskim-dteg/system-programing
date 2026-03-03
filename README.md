@@ -780,3 +780,28 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
       - [mutex in shared memory](https://stackoverflow.com/questions/42628949/using-pthread-mutex-shared-between-processes-correctly)
 
 # API design
+## Usecase
+### [GStreamer](https://gstreamer.freedesktop.org/)
+* GObject를 기반으로 하는 object oriented C library로 multimedia data를 처리하기 위한 framework
+  + member function, inheritance를 c로 구현
+  + 수동 reference counting 방식의 object의 메모리 관리
+    - g_object_ref(...) : reference count 증가
+    - g_object_unref() : reference count 감소, 0이 되면 object의 메모리 해제
+* [GstPipeline](https://gstreamer.freedesktop.org/documentation/gstreamer/gstpipeline.html?gi-language=c) : 여러 element(plugin)를 연결하여 multimedia data flow를 구성하는 단위
+
+  ![gstreamer pipeline](https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/GStreamer_example_pipeline.svg/960px-GStreamer_example_pipeline.svg.png)
+  + 한 process에 여러개의 pipeline 가능
+* [GstElement](https://gstreamer.freedesktop.org/documentation/gstreamer/gstelement.html?gi-language=c) : multimedia data를 처리하는 모듈
+
+  ![gstreamer element](https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/GStreamer_Technical_Overview.svg/500px-GStreamer_Technical_Overview.svg.png)
+  + element는 property, signal, pad를 가질 수 있음
+    - property : element의 동작을 제어하는 parameter
+    - signal : element에서 발생하는 event
+    - pad : element의 input/output interface
+  + 예 : GObject → GstObject → GstElement → GstVideoEncoder → GstV4l2VideoEnc → v4l2h264enc
+* [GstBuffer](https://gstreamer.freedesktop.org/documentation/gstreamer/gstbuffer.html?gi-language=c)
+  + multimedia buffer의 abstract representation
+  + element에서 생성, 처리된 후 pad를 통해 전달
+  + [GstMemory](https://gstreamer.freedesktop.org/documentation/gstreamer/gstmemory.html?gi-language=c)와 [GstMeta](https://gstreamer.freedesktop.org/documentation/gstreamer/gstmeta.html?gi-language=c)로 구성
+    - GstMemory : multimedia data가 저장된 memory block에 대한 정보
+    - GstMeta : multimedia data에 대한 추가 정보(metadata) : timestamp, object detection 결과, ...
