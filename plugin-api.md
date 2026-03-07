@@ -110,48 +110,99 @@
       ```c
       dlclose(hnd);
       ```
-  + Retrieving An Interface (예: log)
-    ```c
-    void *iface;
-    spa_handle_get_interface(handle, SPA_NAME_SUPPORT_LOG, &iface);
-    struct spa_log *log = iface;
-    spa_log_warn(log, "Hello World!\n");
-    ```
-    ```c
-    struct spa_log {
-      struct spa_interface iface;
-      enum spa_log_level level;
-    };
-    struct spa_interface {
-      const char *type;
-      uint32_t version;
-      struct spa_callbacks cb;
-    };
-    struct spa_callbacks {
-      const void *funcs;
-      void *data;
-    };
-    ```
-  + call interface method
-    ```c
-    struct spa_log_methods {
-      uint32_t version;
-      void (*log) (void *object, enum spa_log_level level, const char *file, int line, const char *func, const char *fmt, ...); // v0
-      void (*logv) (void *object, enum spa_log_level level, const char *file, int line, const char *func, const char *fmt, va_list args); // v0
-      void (*logt) (void *object, enum spa_log_level level, const struct spa_log_topic *topic, const char *file, int line, const char *func, const char *fmt, ...); // v1
-      void (*logtv) (void *object, enum spa_log_level level, const struct spa_log_topic *topic, const char *file, int line, const char *func, const char *fmt, va_list args); // v1
-      void (*topic_init) (void *object, struct spa_log_topic *topic); // v1
-    };
-    #define spa_callbacks_call(callbacks,type,method,vers,...)			\
-    ({										\
-      const type *_f = (const type *) (callbacks)->funcs;			\
-      bool _res = SPA_CALLBACK_CHECK(_f,method,vers);				\
-      if (SPA_LIKELY(_res))							\
-        (_f->method)((callbacks)->data, ## __VA_ARGS__);		\
-      _res;									\
-    })
-    ```
+  + Node interface
+    - retrieving interface
+      ```c
+      void *iface;
+      spa_handle_get_interface(handle, SPA_TYPE_INTERFACE_Node, &iface);
+      struct spa_node *node = iface;
+      spa_node_process(node);
+      ```
+      ```c
+      struct spa_node {
+        struct spa_interface iface;
+      };
+      struct spa_interface {
+        const char *type;
+        uint32_t version;
+        struct spa_callbacks cb;
+      };
+      struct spa_callbacks {
+        const void *funcs;
+        void *data;
+      };
+      ```
+    - call interface method
+      ```c
+      SPA_API_NODE int spa_node_process_fast(struct spa_node *object)
+      {
+        return spa_api_method_fast_r(int, -ENOTSUP, spa_node, &object->iface, process, 0);
+      }
+      #define spa_callbacks_call(callbacks,type,method,vers,...)			\
+      ({										\
+        const type *_f = (const type *) (callbacks)->funcs;			\
+        bool _res = SPA_CALLBACK_CHECK(_f,method,vers);				\
+        if (SPA_LIKELY(_res))							\
+          (_f->method)((callbacks)->data, ## __VA_ARGS__);		\
+        _res;									\
+      })
+      ```
+    - node interface methods
+      ```c
+      struct spa_node_methods {
+      #define SPA_VERSION_NODE_METHODS	0
+        uint32_t version;
+        int (*add_listener) (void *object, struct spa_hook *listener, const struct spa_node_events *events, void *data);
+        int (*set_callbacks) (void *object, const struct spa_node_callbacks *callbacks, void *data);
+        int (*sync) (void *object, int seq);
+        int (*enum_params) (void *object, int seq, uint32_t id, uint32_t start, uint32_t max, const struct spa_pod *filter);
+        int (*set_param) (void *object, uint32_t id, uint32_t flags, const struct spa_pod *param);
+        int (*set_io) (void *object, uint32_t id, void *data, size_t size);
+        int (*send_command) (void *object, const struct spa_command *command);
+        int (*add_port) (void *object, enum spa_direction direction, uint32_t port_id, const struct spa_dict *props);
+        int (*remove_port) (void *object, enum spa_direction direction, uint32_t port_id);
+        int (*port_enum_params) (void *object, int seq, enum spa_direction direction, uint32_t port_id, uint32_t id, uint32_t start, uint32_t max, const struct spa_pod *filter);
+        int (*port_set_param) (void *object, enum spa_direction direction, uint32_t port_id, uint32_t id, uint32_t flags, const struct spa_pod *param);
+        int (*port_use_buffers) (void *object, enum spa_direction direction, uint32_t port_id, uint32_t flags, struct spa_buffer **buffers, uint32_t n_buffers);
+        int (*port_set_io) (void *object, enum spa_direction direction, uint32_t port_id, uint32_t id, void *data, size_t size);
+        int (*port_reuse_buffer) (void *object, uint32_t port_id, uint32_t buffer_id);
+        int (*process) (void *object);
+      };
+      ```
+
+### SPA Buffer
+* contains metadata and data
+  ```c
+  struct spa_buffer {
+    uint32_t n_metas;		/**< number of metadata */
+    uint32_t n_datas;		/**< number of data members */
+    struct spa_meta *metas;		/**< array of metadata */
+    struct spa_data *datas;		/**< array of data members */
+  };
+  ```
+* spa_data
+  ```c
+  struct spa_data {
+	uint32_t type;			/**< memory type, one of enum spa_data_type */
+	uint32_t flags;			/**< data flags */
+	int64_t fd;			/**< optional fd for data */
+	uint32_t mapoffset;		/**< offset to map fd at, this is page aligned */
+	uint32_t maxsize;		/**< max size of data */
+	void *data;			/**< optional data pointer */
+	struct spa_chunk *chunk;	/**< valid chunk of memory */
+  };
+  ```
+* spa_meta
+  ```c
+  struct spa_meta {
+	uint32_t type;		/**< metadata type, one of enum spa_meta_type */
+	uint32_t size;		/**< size of metadata */
+	void *data;		/**< pointer to metadata */
+  };
+  ```
+
 ### POD(Plain Old Data)
+* message passing을 위한 data structure
 * LTV(Length Type Value) format : Each POD is made of a 32 bits size followed by a 32 bits type field, followed by the POD contents
   ```c
   struct spa_pod {
@@ -179,9 +230,30 @@
   + SPA_TYPE_Array: An array of equal sized objects.
   + SPA_TYPE_Struct: A collection of types and objects.
   + SPA_TYPE_Object: An object with properties.
+    ```c
+    struct spa_pod_object {
+        struct spa_pod pod;
+        struct spa_pod_object_body body;
+    };
+    struct spa_pod_object_body {
+        uint32_t type;		/**< one of enum spa_type */
+        uint32_t id;		/**< id of the object, depends on the object type */
+        /* contents follow, series of spa_pod_prop */
+    };
+    struct spa_pod_prop {
+        uint32_t key;			/**< key of property, list of valid keys depends on the object type */
+        uint32_t flags;			/**< flags for property */
+        struct spa_pod value;
+        /* value follows */
+    };
+    ```
   + SPA_TYPE_Sequence: A timed sequence of POD's.
 * extra types
   + SPA_TYPE_Pointer: A typed pointer in memory.
   + SPA_TYPE_Fd: A file descriptor.
   + SPA_TYPE_Choice: A choice of values.
   + SPA_TYPE_Pod: A generic type for the POD itself
+
+## [COM (Component Object Model)](https://en.wikipedia.org/wiki/Component_Object_Model)
+![com architecture](com-architecture.PNG)
+* UUID로 구분
