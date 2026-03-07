@@ -818,6 +818,8 @@ https://wxdublin.gitbooks.io/deep-into-linux-and-beyond/content/address_space.ht
 
 
 ## [Pipewire Simple Plugin API](https://docs.pipewire.org/page_spa.html)
+### [Pipewire introduction](https://bootlin.com/blog/an-introduction-to-pipewire/)
+  ![pipewire architecture](https://bootlin.com/wp-content/uploads/2022/06/schema-proxies.jpg)
 ### Design
   + Types
     - String types
