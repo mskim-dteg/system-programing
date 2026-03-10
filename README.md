@@ -254,6 +254,6 @@
   + SPA_TYPE_Choice: A choice of values.
   + SPA_TYPE_Pod: A generic type for the POD itself
 
-## [COM (Component Object Model)](https://en.wikipedia.org/wiki/Component_Object_Model)
-![com architecture](com-architecture.PNG)
+## [COM (Component Object Model)](https://learn.microsoft.com/en-us/windows/win32/com/component-object-model--com--portal)
+![com architecture](com-architecture.png)
 * UUID로 구분
