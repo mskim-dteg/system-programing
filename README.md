@@ -1,4 +1,77 @@
 # API/Plugin
+
+## Primitive Shared Library API
+### Qualcomm QNN Library
+* "QnnInterface_getProviders"로 부터 출발
+  ```c
+  typedef Qnn_ErrorHandle_t (*QnnInterfaceGetProvidersFn_t)(const QnnInterface_t*** providerList, uint32_t* numProviders);
+  
+  typedef struct {
+    QnnProperty_HasCapabilityFn_t             propertyHasCapability;
+
+    QnnBackend_CreateFn_t                     backendCreate;
+    QnnBackend_SetConfigFn_t                  backendSetConfig;
+    QnnBackend_GetApiVersionFn_t              backendGetApiVersion;
+    QnnBackend_GetBuildIdFn_t                 backendGetBuildId;
+    // ....
+  } QNN_INTERFACE_VER_TYPE;
+  typedef struct {
+    uint32_t backendId;
+    const char* providerName;
+    Qnn_ApiVersion_t apiVersion;
+    union UNNAMED {
+      QNN_INTERFACE_VER_TYPE  QNN_INTERFACE_VER_NAME;
+    };
+  } QnnInterface_t;
+
+  // ...
+  QnnInterfaceGetProvidersFn_t getInterfaceProviders =
+    (QnnInterfaceGetProvidersFn_t) dlsym(lib_backend_handle, "QnnInterface_getProviders");
+  // ...
+  ret = getInterfaceProviders((const QnnInterface_t***)&interfaceProviders, &numProviders);
+  // ...
+  /* find exactly matched version */
+  for (uint32_t pIdx = 0; pIdx < numProviders; pIdx++) {
+    if (QNN_API_VERSION_MAJOR == interfaceProviders[pIdx]->apiVersion.coreApiVersion.major &&
+        QNN_API_VERSION_MINOR == interfaceProviders[pIdx]->apiVersion.coreApiVersion.minor)
+    {
+      // ...
+      return std::shared_ptr<QnnInterface>(self);
+    }
+  }
+  /* find upper version */
+  for (uint32_t pIdx = 0; pIdx < numProviders; pIdx++) {
+    if (QNN_API_VERSION_MAJOR == interfaceProviders[pIdx]->apiVersion.coreApiVersion.major &&
+        QNN_API_VERSION_MINOR < interfaceProviders[pIdx]->apiVersion.coreApiVersion.minor)
+    {
+      // ...
+      return std::shared_ptr<QnnInterface>(self);
+    }
+  }
+  ```
+* api version 확인 후 사용
+  + major version이 다르면 호환되지 않음
+  + minor version이 다르면 호환되지만, 새로운 기능이 추가되었을 수 있음
+    - QNN_INTERFACE_VER_TYPE 뒤에 새롭게 추가
+* 기능에 따라 API interface를 처음 부터 새로 정의해야
+  + QnnInterface_getProviders
+  + QnnSystemInterface_getProviders
+
+## [COM (Component Object Model)](https://learn.microsoft.com/en-us/windows/win32/com/component-object-model--com--portal)
+![com architecture](com-architecture.png)
+* Microsoft Windows에서 software component를 개발하기 위한 binary-interface standard
+  + Interfaces : define feature contracts (IUnknown으로 부터 상속)
+    - components : implement interfaces
+  + Servers : provide components to the system
+  + Clients : use the features provided by components
+  + **registry** : tracks where components are deployed on local and remote hosts
+* IUnknown interface
+  + 모든 COM interface는 IUnknown에서 상속
+  + reference counting 방식의 메모리 관리
+    - AddRef() : reference count 증가
+    - Release() : reference count 감소, 0이 되면 object의 메모리 해제
+  + QueryInterface() : component가 지원하는 interface를 query하여 pointer를 반환
+
 ## [GStreamer](https://gstreamer.freedesktop.org/)
 ### GObject를 기반으로 하는 object oriented C library로 multimedia data를 처리하기 위한 framework
   + member function, inheritance를 c로 구현
@@ -253,7 +326,3 @@
   + SPA_TYPE_Fd: A file descriptor.
   + SPA_TYPE_Choice: A choice of values.
   + SPA_TYPE_Pod: A generic type for the POD itself
-
-## [COM (Component Object Model)](https://learn.microsoft.com/en-us/windows/win32/com/component-object-model--com--portal)
-![com architecture](com-architecture.png)
-* UUID로 구분
